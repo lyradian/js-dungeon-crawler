@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Crawler</title>
+	<link href="css/app.css" rel="stylesheet"></link>
+	<script type="text/javascript" charset="UTF-8" src="texture/wall-brick.js"></script>
+	<script type="text/javascript" charset="UTF-8" src="texture/ground-asphalt.js"></script>
+	<script type="text/javascript" charset="UTF-8" src="texture/sky-noon.js"></script>
+	<script type="text/javascript" charset="UTF-8" src="texture/merchant.js"></script>
+	<script type="text/javascript" charset="UTF-8" src="texture/soldier.js"></script>
+	<script type="text/javascript" charset="UTF-8" src="objects/dungeon.js"></script>
+    <style>
+       
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="loading">Loading...</div>
+        <div id="playerInfo">
+            Position: <span id="posX">0</span>, <span id="posY">0</span><br>
+            Facing: <span id="facing">North</span>
+        </div>
+		<div id="profilePic">
+			<img src="../Images/ruth.jpeg" alt="Profile">
+		</div>
+        <div id="controls">
+            <button id="turnLeft">⟲</button>
+            <button id="moveForward">↑</button>
+            <button id="moveBackward">↓</button>
+            <button id="turnRight">⟳</button>
+            <button id="strafeLeft">←</button>
+            <button id="strafeRight">→</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+		//--------------------------------------------
+		// Variables
+		//--------------------------------------------
+	
+        // Game state
+        const state = {
+            position: { x: 3, y: 3 },
+            facing: 0, // 0: North, 1: East, 2: South, 3: West
+            map: //0: floor, 1: obstructed, 2: roofed room , 3: roofed wall
+			[
+                [1, 1, 1, 1, 1, 1, 1],
+                [1, 0, 2, 2, 2, 2, 1],
+                [1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 1],
+                [1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 1],
+                [1, 1, 1, 1, 1, 1, 1]
+            ],
+            entityMap: [
+                [0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 2, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0],
+                [0, 3, 0, 0, 0, 2, 0],
+                [0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 4, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0]
+            ],
+            entities: {
+                2: { name: "Treasure", texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
+                3: { name: "Enemy", texture: merchantTexture, color: 0xff3322, interact: () => alert("Enemy attacks!") },
+                4: { name: "Key", texture: soldierTexture, color: 0xffffff, interact: () => alert("You found a key!") }
+            },
+            moving: false,
+            turning: false,
+            targetRotation: 0,
+            targetPosition: { x: 0, z: 0 }
+        };
+
+        // Theme/tileset configuration
+        const themes = {
+            dungeon: {
+                name: "Dungeon",
+                wallColor: 0x555555,
+                floorColor: 0x444444,
+                ceilingColor: 0x222222,
+                fogColor: 0xFFFFFF,
+                ambientLight: 0x333333,
+            },
+            cave: {
+                name: "Cave",
+                wallColor: 0x654321,
+                floorColor: 0x765432,
+                ceilingColor: 0x543210,
+                fogColor: 0x321000,
+                ambientLight: 0x553322,
+            },
+            forest: {
+                name: "Forest",
+                wallColor: 0x228B22,
+                floorColor: 0x32CD32,
+                ceilingColor: 0x87CEEB,
+                fogColor: 0x4169E1,
+                ambientLight: 0x88aa88
+            }
+        };
+
+        // Current theme
+        let currentTheme = themes.cave;
+
+        // Direction vectors based on facing
+        const directions = [
+            { x: 0, z: -1 }, // North
+            { x: -1, z: 0 },  // West
+            { x: 0, z: 1 },  // South
+            { x: 1, z: 0 }  // East
+        ];
+
+        // Direction names
+        const directionNames = ['North', 'West', 'South', 'East'];
+
+        // Three.js variables
+        let scene, camera, renderer, clock, skySphere;
+        let walls = [];
+		let ceilings = [];
+        let entities = [];
+        let raycaster, mouse;
+        let moveSpeed = 0.03;
+        let turnSpeed = 0.07;
+        
+		// DOM elements
+        const posXElement = document.getElementById('posX');
+        const posYElement = document.getElementById('posY');
+        const facingElement = document.getElementById('facing');
+        const loadingElement = document.getElementById('loading');
+
+		//-----------------------------------------
+		// AppInitialisation
+		//-----------------------------------------
+		
+        function AppInit() 
+		{
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(currentTheme.fogColor, 0.2);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 10);
+            camera.position.set(state.position.x, 0.45, state.position.y); // y in Three.js is up/down
+            camera.rotation.order = 'YXZ'; // Adjust rotation order for first-person controls
+			
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(currentTheme.fogColor);
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            // AppInitialize clock for animations
+            clock = new THREE.Clock();
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(currentTheme.ambientLight);
+            scene.add(ambientLight);
+            
+            const pointLight = new THREE.PointLight(0xffffff, 1, 10);
+            pointLight.position.set(0, 0.25, -0.25);
+            camera.add(pointLight);
+            scene.add(camera);
+            
+            // Setup for interactive objects
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Build the AppInitial map
+            buildMap();
+            updateCameraRotation();
+            window.addEventListener('resize', onWindowResize);
+            //renderer.domElement.addEventListener('click', onMouseClick);
+            loadingElement.style.display = 'none';
+            animate();
+        }
+
+	
+        // Build the map from the map array
+        function buildMap() 
+		{
+            // Clear existing walls and entities
+            walls.forEach(wall => scene.remove(wall));
+            entities.forEach(entity => scene.remove(entity));
+			ceilings.forEach(ceiling=>scene.remove(ceiling));
+            walls = [];
+            entities = [];
+			ceilings = [];
+            
+            // Materials
+			const textureLoader = new THREE.TextureLoader();
+            const wallMaterial = new THREE.MeshStandardMaterial({
+				map: new THREE.TextureLoader().load(wallTexture),
+				roughness: 0.8
+			});
+            const floorMaterial = new THREE.MeshStandardMaterial({
+				map: new THREE.TextureLoader().load(groundTexture),
+				roughness: 0.8
+			});
+            const ceilingMaterial = new THREE.MeshStandardMaterial({
+				map: new THREE.TextureLoader().load(wallTexture),
+				roughness: 0.3
+			});
+            
+			const skyBackground = new THREE.TextureLoader().load(skyTexture);
+			skyBackground.mapping = THREE.EquirectangularReflectionMapping;
+			scene.background = skyBackground;
+			
+			
+
+			// Create floor and ceiling
+            const floorGeometry = new THREE.PlaneGeometry(dungeon.map[0].length, dungeon.map.length);
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.set(dungeon.map[0].length / 2 - 0.5, -0.1, dungeon.map.length / 2 - 0.5);
+            scene.add(floor);
+			
+            const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
+            
+            
+            // Create Walls
+            const wallGeometry = new THREE.BoxGeometry(1, 1.2, 1);
+            const ceilingGeometry = new THREE.BoxGeometry(1, 0.1, 1);
+            for (let y = 0; y < dungeon.map.length; y++) 
+			{
+                for (let x = 0; x < dungeon.map[y].length; x++) 
+				{
+                    SpawnCeiling(x,y,ceilingMaterial, ceilingGeometry);
+                    SpawnWall(x,y, wallMaterial, wallGeometry);
+					SpawnEntity(x,y);
+                }
+            }
+        }
+		
+		
+		function SpawnWall(x,y, material, geometry) 
+		{
+			if (dungeon.map[y][x] === dungeon.code.wall) {
+				const wall = new THREE.Mesh(geometry, material);
+				wall.position.set(x, 0.5, y);
+				scene.add(wall);
+				walls.push(wall);
+			}
+		}
+		
+		function SpawnCeiling(x,y,material, geometry) 
+		{
+			if (dungeon.map[y][x] === dungeon.code.roof || dungeon.map[y][x] === dungeon.code.roofWall) {
+				const ceiling = new THREE.Mesh(geometry, material);
+				ceiling.position.set(x, 1.1, y);
+				scene.add(ceiling);
+				ceilings.push(ceiling);
+			}
+		}
+		
+		
+		function SpawnEntity(x,y) 
+		{
+			if (state.entityMap[y][x] > 0) 
+			{        
+				const entityId = state.entityMap[y][x];
+				const entityDef = state.entities[entityId];
+				
+				if (entityDef) 
+				{
+					const map = new THREE.TextureLoader().load(entityDef.texture);
+					map.transparent = true;
+					
+					const entityMaterial = new THREE.SpriteMaterial({
+						map: map,
+						transparent: true,
+						alphaTest: 0.5, // Reduces transparency artifacts
+						color: entityDef.color || 0xffffff
+					});
+					
+					// Create sprite
+					const entity = new THREE.Sprite(entityMaterial);
+					entity.position.set(x, 0.43, y);
+					entity.scale.set(1, 1, 1); // Width, height
+					
+					entity.userData = { 
+						type: 'entity', 
+						id: entityId,
+						interact: entityDef.interact
+					};
+					scene.add(entity);
+					entities.push(entity);
+				}
+			}
+		}
+		
+		  // Load map function
+        function loadMap(newMap, newEntityMap = null) 
+		{
+            dungeon = newMap;
+            if (newEntityMap) {
+                state.entityMap = newEntityMap;
+            }
+            
+            // Find a valid starting position
+            let validStartFound = false;
+            for (let y = 0; y < dungeon.map.length && !validStartFound; y++) {
+                for (let x = 0; x < dungeon.map[y].length && !validStartFound; x++) {
+                    if (dungeon.map[y][x] === dungeon.code.floor) {
+                        state.position.x = x;
+                        state.position.y = y;
+                        camera.position.x = x;
+                        camera.position.z = y;
+                        validStartFound = true;
+                    }
+                }
+            }
+            
+            buildMap();
+            updatePlayerInfo();
+        }
+
+		//---------------------------------------------
+		// Actions
+		//---------------------------------------------
+	
+		function movePlayer(relativeDirection) 
+		{
+		    if (state.moving || state.turning) return;
+			let dir = directions[(state.facing + 4 + relativeDirection) % 4];
+			const newX = state.position.x + dir.x;
+            const newY = state.position.y + dir.z;
+			if (canMoveTo(newX, newY)) {
+                state.targetPosition = { x: newX, z: newY };
+                state.moving = true;
+                
+                // Update player info display immediately
+                state.position.x = newX;
+                state.position.y = newY;
+                updatePlayerInfo();
+            }
+		}
+		
+        function turnPlayer(direction) {
+            if (state.moving || state.turning) return;
+       
+            state.facing = (state.facing + 4 + direction) % 4;
+            updateCameraRotation();
+            updatePlayerInfo();
+        }
+		
+		 // Switch theme
+        function switchTheme(themeName) {
+            if (themes[themeName]) {
+                currentTheme = themes[themeName];
+                scene.fog.color.set(currentTheme.fogColor);
+                renderer.setClearColor(currentTheme.fogColor);
+                scene.children.forEach(child => {
+                    if (child.isMesh) {
+                        if (child.position.y < 0) {
+                            // Floor
+                            child.material.color.set(currentTheme.floorColor);
+                        } else if (child.position.y > 1) {
+                            // Ceiling
+                            child.material.color.set(currentTheme.ceilingColor);
+                        } else {
+                            // Wall or entity
+                            const userData = child.userData;
+                            if (userData && userData.type === 'entity' && userData.id) {
+                                child.material.color.set(currentTheme.entityColors[userData.id] || 0xffffff);
+                                child.material.emissive.set(currentTheme.entityColors[userData.id] || 0xffffff);
+                            } else {
+                                child.material.color.set(currentTheme.wallColor);
+                            }
+                        }
+                    } else if (child.isLight && child.type === 'AmbientLight') {
+                        child.color.set(currentTheme.ambientLight);
+                    }
+                });
+            }
+        }
+		
+		//---------------------------------------------
+		// Conditions
+		//---------------------------------------------
+		
+        // Check if position is valid
+        function isValidPosition(x, y) {
+            return x >= 0 && y >= 0 && 
+                  y < dungeon.map.length && 
+                  x < dungeon.map[y].length;
+        }
+
+        // Check if a move is valid
+        function canMoveTo(x, y) {
+            return isValidPosition(x, y) && dungeon.map[y][x]%2 === 0;
+        }
+
+
+		//---------------------------------------------
+		// Updates
+		//---------------------------------------------
+		
+        // Update camera rotation based on facing direction
+        function updateCameraRotation() {
+            state.targetRotation = state.facing * (Math.PI / 2);
+            state.turning = true;
+        }
+
+        // Update player info display
+        function updatePlayerInfo() {
+            posXElement.textContent = state.position.x;
+            posYElement.textContent = state.position.y;
+            facingElement.textContent = directionNames[state.facing];
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+
+        // Handle mouse clicks for entity interaction
+        function onMouseClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(entities);
+            
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                if (object.userData && object.userData.interact) {
+                    object.userData.interact();
+                }
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+			
+            // Handle smooth camera turning
+            if (state.turning) 
+			{
+                const currentRotation = camera.rotation.y;
+                const diff = state.targetRotation - currentRotation;
+                
+                // Handle wrapping around from 0 to 2π
+                let shortestDiff = diff;
+                if (Math.abs(diff) > Math.PI) {
+                    shortestDiff = diff > 0 ? diff - 2 * Math.PI : diff + 2 * Math.PI;
+                }
+                
+                if (Math.abs(shortestDiff) < 0.01) 
+				{
+                    camera.rotation.y = state.targetRotation;
+                    state.turning = false;
+                } 
+				else 
+				{
+                    const step = Math.sign(shortestDiff) * Math.min(turnSpeed, Math.abs(shortestDiff));
+                    camera.rotation.y += step;
+                    
+                    // Handle wrapping
+                    if (camera.rotation.y > Math.PI) {
+                        camera.rotation.y -= 2 * Math.PI;
+                    } else if (camera.rotation.y < -Math.PI) {
+                        camera.rotation.y += 2 * Math.PI;
+                    }
+                }
+            }
+            
+            // Handle smooth camera movement
+            if (state.moving) 
+			{
+                const dx = state.targetPosition.x - camera.position.x;
+                const dz = state.targetPosition.z - camera.position.z;
+                
+                if (Math.abs(dx) < 0.01 && Math.abs(dz) < 0.01) 
+				{
+                    camera.position.x = state.targetPosition.x;
+                    camera.position.z = state.targetPosition.z;
+                    state.moving = false;
+                } 
+				else 
+				{
+                    camera.position.x += Math.sign(dx) * Math.min(moveSpeed, Math.abs(dx));
+                    camera.position.z += Math.sign(dz) * Math.min(moveSpeed, Math.abs(dz));
+                }
+            }
+			
+			if (state.moving || state.turning) 
+			{
+				entities.forEach(sprite => {
+				sprite.lookAt(camera.position);
+				});
+			}
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+
+		//---------------------------------------
+		// Setup controls
+		//---------------------------------------
+
+        // Set up event listeners for controls
+        document.getElementById('moveForward').addEventListener('click', ()=> { movePlayer(0);});
+        document.getElementById('moveBackward').addEventListener('click', ()=> { movePlayer(-2);});
+        document.getElementById('turnLeft').addEventListener('click', ()=> {turnPlayer(1);});
+        document.getElementById('turnRight').addEventListener('click', ()=> {turnPlayer(-1);});
+        document.getElementById('strafeLeft').addEventListener('click', ()=> { movePlayer(1);});
+        document.getElementById('strafeRight').addEventListener('click', ()=> { movePlayer(-1);});
+        document.addEventListener('keydown', SetupInputs);
+		
+		function SetupInputs(e) 
+		{
+            // Prevent default behavior for arrow keys
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+            }
+            
+            switch(e.key) 
+			{
+                case 'ArrowUp': 
+                case 'w': movePlayer(0); break;
+                case 'ArrowDown': 
+                case 's': movePlayer(-2); break;
+				case 'q': movePlayer(1); break;
+                case 'e': movePlayer(-1); break;
+                case 'ArrowLeft': 
+                case 'a': turnPlayer(1); break;
+                case 'ArrowRight': 
+                case 'd': turnPlayer(-1); break;
+                case '1': switchTheme('dungeon'); break;
+                case '2': switchTheme('cave'); break;
+                case '3': switchTheme('forest'); break;
+            }
+        };
+		
+        AppInit();
+    </script>
+</body>
+</html>
