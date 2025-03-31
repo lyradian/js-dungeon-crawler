@@ -11,7 +11,8 @@
 	<script type="text/javascript" charset="UTF-8" src="texture/merchant.js"></script>
 	<script type="text/javascript" charset="UTF-8" src="texture/soldier.js"></script>
 	<script type="text/javascript" charset="UTF-8" src="objects/dungeon.js"></script>
-    <style>
+    <script type="text/javascript" charset="UTF-8" src="objects/speech-text.js"></script>
+   <style>
        
     </style>
 </head>
@@ -265,7 +266,7 @@
 		
 		function SpawnEntity(x,y) 
 		{
-			if ( dungeon.entityMap?.[y]?.[x]  > 0) 
+			if ( dungeon.entityMap?.[y]?.[x]  >= 0) 
 			{        
 				const entityId = dungeon.entityMap[y][x];
 				const entityType = dungeon.entityTypes[entityId];

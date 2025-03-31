@@ -5,15 +5,15 @@ function Dungeon()
 	this.map = [];
 	this.entityMap = [];
 	this.entityTypes = [
-		{ name: "Treasure", spawnMarkerPercent: 11, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
-		{ name: "Key", spawnMarkerPercent: 22, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found a key!") },
+		{ name: "Treasure", spawnMarkerPercent: 15, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
+		{ name: "Key", spawnMarkerPercent: 22, texture: soldierTexture, color: 0x3333ff, interact: () => alert("You found a key!") },
 		{ name: "Enemy", spawnMarkerPercent: 95, texture: merchantTexture, color: 0xff3322, interact: () => alert("Enemy attacks!") },
 	];
 	
 				
 	this.GenerateMap = function( width=35, height=35, minWidth=3, minHeight=3) {
 		this.map = Array(height).fill().map(() => Array(width).fill(W));
-		this.entityMap = Array(height).fill().map(() => Array(width).fill(0));
+		this.entityMap = Array(height).fill().map(() => Array(width).fill(-1));
 		
         // Random room dimensions (minimum 3x3, leaving 1 wall border)
         const mapWidth = Math.floor(Math.random() * (width - minWidth-1)) + minWidth;
@@ -26,7 +26,6 @@ function Dungeon()
 		let coveragePercent = 0;
 		let	currentRoomIndex = 0;
 		let entityIndex = 0;
-		let entityMarkers = Object.keys(this.entityTypes);
 		let maxRooms = mapWidth*mapHeight;
 		
 		const centerX = Math.floor(startX + mapWidth/2);
@@ -56,6 +55,8 @@ function Dungeon()
 							if ( coveragePercent >= currentEntity.spawnMarkerPercent ) 
 							{
 								this.entityMap[y][x] = entityIndex;
+								
+								console.log(entityIndex, y, x);
 								entityIndex ++;
 							}
 						}
@@ -72,7 +73,7 @@ function Dungeon()
         
         // Ensure walkable path by flood filling
         this.EnsureWalkablePath(centerX, centerY);
-		this.LoadentityMap(width, height, minWidth, minHeight);
+		// this.LoadEntityMap(width, height, minWidth, minHeight);
 	
     };
 		
@@ -136,7 +137,7 @@ function Dungeon()
 		return {x:0, y:0};
 	};
 	
-	this.LoadentityMap = function( width, height, mapWidth, mapHeight) 
+	this.LoadEntityMap = function( width, height, mapWidth, mapHeight) 
 	{
 		for (let key in this.entityTypes) {
 			const x = Math.floor(Math.random() * (width - mapWidth - 2)) + 1;
@@ -150,7 +151,7 @@ function Dungeon()
 	};
 	
 	this.GenerateMap();
-//	this.LoadentityMap();
+//	this.LoadEntityMap();
 	
 	return this;
 }
