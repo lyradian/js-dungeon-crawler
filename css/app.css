@@ -12,10 +12,10 @@
         #controls {
             position: absolute;
             bottom: 20px;
-            left: 0;
-            width: 100%;
+            right: 20px;
+            width: 50%;
             display: flex;
-            justify-content: center;
+            justify-content: end;
             gap: 10px;
             z-index: 100;
         }
@@ -59,8 +59,8 @@
         }
 		#profilePic {
 			position: absolute;
-			top: 10px;
-			right: 10px;
+			bottom: 10px;
+			left: 10px;
 			width: 80px;
 			height: 80px;
 			border-radius: 50%;

@@ -23,7 +23,7 @@
             Facing: <span id="facing">North</span>
         </div>
 		<div id="profilePic">
-			<img src="../Images/ruth.jpeg" alt="Profile">
+			<img src="images/ruth.jpeg" alt="Profile">
 		</div>
         <div id="controls">
             <button id="turnLeft">⟲</button>
@@ -43,7 +43,7 @@
 	
         // Game state
         const state = {
-            position: { x: 3, y: 3 },
+            position: dungeon.GetStartingPosition(),
             facing: 0, // 0: North, 1: East, 2: South, 3: West
             map: //0: floor, 1: obstructed, 2: roofed room , 3: roofed wall
 			[
@@ -120,6 +120,7 @@
         // Three.js variables
         let scene, camera, renderer, clock, skySphere;
         let walls = [];
+		let floors = [];
 		let ceilings = [];
         let entities = [];
         let raycaster, mouse;
@@ -170,7 +171,7 @@
             mouse = new THREE.Vector2();
             
             // Build the AppInitial map
-            buildMap();
+            BuildMap();
             updateCameraRotation();
             window.addEventListener('resize', onWindowResize);
             //renderer.domElement.addEventListener('click', onMouseClick);
@@ -178,18 +179,22 @@
             animate();
         }
 
-	
-        // Build the map from the map array
-        function buildMap() 
+		function ClearMap() 
 		{
-            // Clear existing walls and entities
-            walls.forEach(wall => scene.remove(wall));
+		    walls.forEach(wall => scene.remove(wall));
             entities.forEach(entity => scene.remove(entity));
 			ceilings.forEach(ceiling=>scene.remove(ceiling));
+			floors.forEach(floor=>scene.remove(floor));
             walls = [];
             entities = [];
 			ceilings = [];
-            
+			floors = [];
+		}
+	
+        // Build the map from the map array
+        function BuildMap() 
+		{
+            ClearMap();
             // Materials
 			const textureLoader = new THREE.TextureLoader();
             const wallMaterial = new THREE.MeshStandardMaterial({
@@ -212,29 +217,37 @@
 			
 
 			// Create floor and ceiling
-            const floorGeometry = new THREE.PlaneGeometry(dungeon.map[0].length, dungeon.map.length);
-            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-            floor.rotation.x = -Math.PI / 2;
-            floor.position.set(dungeon.map[0].length / 2 - 0.5, -0.1, dungeon.map.length / 2 - 0.5);
-            scene.add(floor);
-			
+            const floorGeometry = new THREE.PlaneGeometry(1, 1);
             const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
             
             
             // Create Walls
-            const wallGeometry = new THREE.BoxGeometry(1, 1.2, 1);
-            const ceilingGeometry = new THREE.BoxGeometry(1, 0.1, 1);
+            const wallGeometry = new THREE.BoxGeometry(1, 1, 1);
+			const halfWallGeometry = new THREE.BoxGeometry(1, 0.333, 1);
+            const ceilingGeometry = new THREE.BoxGeometry(1, 0.05, 1);
+			
             for (let y = 0; y < dungeon.map.length; y++) 
 			{
                 for (let x = 0; x < dungeon.map[y].length; x++) 
 				{
+					SpawnFloor(x,y, floorMaterial, floorGeometry);
                     SpawnCeiling(x,y,ceilingMaterial, ceilingGeometry);
                     SpawnWall(x,y, wallMaterial, wallGeometry);
+					SpawnHalfWall(x,y, wallMaterial, halfWallGeometry);
 					SpawnEntity(x,y);
                 }
             }
         }
 		
+		
+		function SpawnFloor(x,y,material, geometry) 
+		{
+			const floor = new THREE.Mesh(geometry, material);
+			floor.rotation.x = -Math.PI / 2;
+            floor.position.set(x, -0.01, y);
+			scene.add(floor);
+            floors.push(floor);
+		}
 		
 		function SpawnWall(x,y, material, geometry) 
 		{
@@ -246,11 +259,21 @@
 			}
 		}
 		
+		function SpawnHalfWall(x,y, material, geometry) 
+		{
+			if (dungeon.map[y][x] === dungeon.code.halfWall) {
+				const wall = new THREE.Mesh(geometry, material);
+				wall.position.set(x, 0.167, y);
+				scene.add(wall);
+				walls.push(wall);
+			}
+		}
+		
 		function SpawnCeiling(x,y,material, geometry) 
 		{
 			if (dungeon.map[y][x] === dungeon.code.roof || dungeon.map[y][x] === dungeon.code.roofWall) {
 				const ceiling = new THREE.Mesh(geometry, material);
-				ceiling.position.set(x, 1.1, y);
+				ceiling.position.set(x, 1, y);
 				scene.add(ceiling);
 				ceilings.push(ceiling);
 			}
@@ -259,7 +282,7 @@
 		
 		function SpawnEntity(x,y) 
 		{
-			if (state.entityMap[y][x] > 0) 
+			if ( state.entityMap?.[y]?.[x]  > 0) 
 			{        
 				const entityId = state.entityMap[y][x];
 				const entityDef = state.entities[entityId];
@@ -302,19 +325,25 @@
             
             // Find a valid starting position
             let validStartFound = false;
-            for (let y = 0; y < dungeon.map.length && !validStartFound; y++) {
-                for (let x = 0; x < dungeon.map[y].length && !validStartFound; x++) {
-                    if (dungeon.map[y][x] === dungeon.code.floor) {
+            for (let y = 0; y < dungeon.map.length && !validStartFound; y++) 
+			{
+                for (let x = 0; x < dungeon.map[y].length && !validStartFound; x++) 
+				{
+                    switch (dungeon.map[y][x]) 
+					{
+						case dungeon.code.floor:
+						case dungeon.code.startingFloor:
                         state.position.x = x;
                         state.position.y = y;
                         camera.position.x = x;
                         camera.position.z = y;
                         validStartFound = true;
+						break;
                     }
                 }
             }
             
-            buildMap();
+            BuildMap();
             updatePlayerInfo();
         }
 
@@ -328,7 +357,7 @@
 			let dir = directions[(state.facing + 4 + relativeDirection) % 4];
 			const newX = state.position.x + dir.x;
             const newY = state.position.y + dir.z;
-			if (canMoveTo(newX, newY)) {
+			if (dungeon.CanMoveTo(newX, newY)) {
                 state.targetPosition = { x: newX, z: newY };
                 state.moving = true;
                 
@@ -389,10 +418,7 @@
                   x < dungeon.map[y].length;
         }
 
-        // Check if a move is valid
-        function canMoveTo(x, y) {
-            return isValidPosition(x, y) && dungeon.map[y][x]%2 === 0;
-        }
+ 
 
 
 		//---------------------------------------------
