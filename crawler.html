@@ -44,15 +44,8 @@
 	
         // Game state
         const state = {
-            position: dungeon.GetStartingPosition(),
+            position: {x:0,y:0},
             facing: 0, // 0: North, 1: East, 2: South, 3: West
-           
-            entityMap: [],
-            entities: {
-                2: { name: "Treasure", texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
-                3: { name: "Enemy", texture: merchantTexture, color: 0xff3322, interact: () => alert("Enemy attacks!") },
-                4: { name: "Key", texture: soldierTexture, color: 0xffffff, interact: () => alert("You found a key!") }
-            },
             moving: false,
             turning: false,
             targetRotation: 0,
@@ -60,35 +53,56 @@
         };
 
         // Theme/tileset configuration
-        const themes = {
+        const areas = {
             dungeon: {
                 name: "Dungeon",
                 wallColor: 0x555555,
                 floorColor: 0x444444,
-                ceilingColor: 0x222222,
                 fogColor: 0x6F6F6F,
                 ambientLight: 0x333333,
+				wallTexture: wallTexture,
+				groundTexture: groundTexture,
+				skyTexture: skyTexture,
+				entities: [
+					{ name: "Treasure", areaPercentPosition: 15, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
+					{ name: "Key", areaPercentPosition: 22, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found a key!") },
+					{ name: "Enemy", areaPercentPosition: 95, texture: merchantTexture, color: 0xff3322, interact: () => alert("Enemy attacks!") },
+				]
             },
             cave: {
                 name: "Cave",
                 wallColor: 0x654321,
                 floorColor: 0x765432,
-                ceilingColor: 0x543210,
                 fogColor: 0xba6823,
                 ambientLight: 0x553322,
+				wallTexture: wallTexture,
+				groundTexture: groundTexture,
+				skyTexture: skyTexture,
+				entities: [
+					{ name: "Treasure", areaPercentPosition: 15, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
+					{ name: "Key", areaPercentPosition: 22, texture: soldierTexture, color: 0x3333ff, interact: () => alert("You found a key!") },
+					{ name: "Enemy", areaPercentPosition: 95, texture: merchantTexture, color: 0xcccccc, interact: () => alert("Enemy attacks!") },
+				]
             },
             forest: {
                 name: "Forest",
                 wallColor: 0x228B22,
                 floorColor: 0x32CD32,
-                ceilingColor: 0x87CEEB,
                 fogColor: 0x4169E1,
-                ambientLight: 0x88aa88
+                ambientLight: 0x88aa88,
+				wallTexture: wallTexture,
+				groundTexture: groundTexture,
+				skyTexture: skyTexture,
+				entities: [
+					{ name: "Treasure", areaPercentPosition: 15, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
+					{ name: "Key", areaPercentPosition: 22, texture: soldierTexture, color: 0x3333ff, interact: () => alert("You found a key!") },
+					{ name: "Enemy", areaPercentPosition: 95, texture: merchantTexture, color: 0x443322, interact: () => alert("Enemy attacks!") },
+				]
             }
         };
 
         // Current theme
-        let currentTheme = themes.cave;
+        let currentArea = areas.cave;
 
         // Direction vectors based on facing
         const directions = [
@@ -103,10 +117,7 @@
 
         // Three.js variables
         let scene, camera, renderer, clock, skySphere;
-        let walls = [];
-		let floors = [];
-		let ceilings = [];
-        let entities = [];
+        
         let raycaster, mouse;
         let moveSpeed = 0.03;
         let turnSpeed = 0.07;
@@ -125,7 +136,7 @@
 		{
             // Create scene
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(currentTheme.fogColor, 0.2);
+            scene.fog = new THREE.FogExp2(currentArea.fogColor, 0.2);
             
             // Create camera
             camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 10);
@@ -135,14 +146,14 @@
             // Create renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(currentTheme.fogColor);
+            renderer.setClearColor(currentArea.fogColor);
             document.getElementById('gameContainer').appendChild(renderer.domElement);
             
             // AppInitialize clock for animations
             clock = new THREE.Clock();
             
             // Add lighting
-            const ambientLight = new THREE.AmbientLight(currentTheme.ambientLight);
+            const ambientLight = new THREE.AmbientLight(currentArea.ambientLight);
             scene.add(ambientLight);
             
             const pointLight = new THREE.PointLight(0xffffff, 1, 10);
@@ -155,187 +166,23 @@
             mouse = new THREE.Vector2();
             
             // Build the AppInitial map
-            BuildMap();
-            updateCameraRotation();
+            dungeon.GenerateLayout(currentArea);
+			state.position = dungeon.GetStartingPosition();			
+			camera.position.x = state.position.x;
+			camera.position.z = state.position.y;
+            UpdateCameraRotation();
             window.addEventListener('resize', onWindowResize);
             //renderer.domElement.addEventListener('click', onMouseClick);
             loadingElement.style.display = 'none';
-            animate();
+            AnimateFrame();
         }
 
-		function ClearMap() 
-		{
-		    walls.forEach(wall => scene.remove(wall));
-            entities.forEach(entity => scene.remove(entity));
-			ceilings.forEach(ceiling=>scene.remove(ceiling));
-			floors.forEach(floor=>scene.remove(floor));
-            walls = [];
-            entities = [];
-			ceilings = [];
-			floors = [];
-		}
-	
-        // Build the map from the map array
-        function BuildMap() 
-		{
-            ClearMap();
-            // Materials
-			const textureLoader = new THREE.TextureLoader();
-            const wallMaterial = new THREE.MeshStandardMaterial({
-				map: new THREE.TextureLoader().load(wallTexture),
-				roughness: 0.8
-			});
-            const floorMaterial = new THREE.MeshStandardMaterial({
-				map: new THREE.TextureLoader().load(groundTexture),
-				roughness: 0.8
-			});
-            const ceilingMaterial = new THREE.MeshStandardMaterial({
-				map: new THREE.TextureLoader().load(wallTexture),
-				roughness: 0.3
-			});
-            
-			const skyBackground = new THREE.TextureLoader().load(skyTexture);
-			skyBackground.mapping = THREE.EquirectangularReflectionMapping;
-			scene.background = skyBackground;
-			
-			
-
-			// Create floor and ceiling
-            const floorGeometry = new THREE.PlaneGeometry(1, 1);
-            const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
-            
-            
-            // Create Walls
-            const wallGeometry = new THREE.BoxGeometry(1, 1, 1);
-			const halfWallGeometry = new THREE.BoxGeometry(1, 0.333, 1);
-            const ceilingGeometry = new THREE.BoxGeometry(1, 0.05, 1);
-			
-            for (let y = 0; y < dungeon.map.length; y++) 
-			{
-                for (let x = 0; x < dungeon.map[y].length; x++) 
-				{
-					SpawnFloor(x,y, floorMaterial, floorGeometry);
-                    SpawnCeiling(x,y,ceilingMaterial, ceilingGeometry);
-                    SpawnWall(x,y, wallMaterial, wallGeometry);
-					SpawnHalfWall(x,y, wallMaterial, halfWallGeometry);
-					SpawnEntity(x,y);
-                }
-            }
-        }
-		
-		
-		function SpawnFloor(x,y,material, geometry) 
-		{
-			const floor = new THREE.Mesh(geometry, material);
-			floor.rotation.x = -Math.PI / 2;
-            floor.position.set(x, -0.01, y);
-			scene.add(floor);
-            floors.push(floor);
-		}
-		
-		function SpawnWall(x,y, material, geometry) 
-		{
-			if (dungeon.map[y][x] === dungeon.code.wall) {
-				const wall = new THREE.Mesh(geometry, material);
-				wall.position.set(x, 0.5, y);
-				scene.add(wall);
-				walls.push(wall);
-			}
-		}
-		
-		function SpawnHalfWall(x,y, material, geometry) 
-		{
-			if (dungeon.map[y][x] === dungeon.code.halfWall) {
-				const wall = new THREE.Mesh(geometry, material);
-				wall.position.set(x, 0.167, y);
-				scene.add(wall);
-				walls.push(wall);
-			}
-		}
-		
-		function SpawnCeiling(x,y,material, geometry) 
-		{
-			if (dungeon.map[y][x] === dungeon.code.roof || dungeon.map[y][x] === dungeon.code.roofWall) {
-				const ceiling = new THREE.Mesh(geometry, material);
-				ceiling.position.set(x, 1, y);
-				scene.add(ceiling);
-				ceilings.push(ceiling);
-			}
-		}
-		
-		
-		function SpawnEntity(x,y) 
-		{
-			if ( dungeon.entityMap?.[y]?.[x]  >= 0) 
-			{        
-				const entityId = dungeon.entityMap[y][x];
-				const entityType = dungeon.entityTypes[entityId];
-				
-				if (entityType) 
-				{
-					const map = new THREE.TextureLoader().load(entityType.texture);
-					map.transparent = true;
-					
-					const entityMaterial = new THREE.SpriteMaterial({
-						map: map,
-						transparent: true,
-						alphaTest: 0.5, // Reduces transparency artifacts
-						color: entityType.color || 0xffffff
-					});
-					
-					// Create sprite
-					const entity = new THREE.Sprite(entityMaterial);
-					entity.position.set(x, 0.43, y);
-					entity.scale.set(1, 1, 1); // Width, height
-					
-					entity.userData = { 
-						type: 'entity', 
-						id: entityId,
-						interact: entityType.interact
-					};
-					scene.add(entity);
-					entities.push(entity);
-				}
-			}
-		}
-		
-		  // Load map function
-        function loadMap(newMap, newEntityMap = null) 
-		{
-            dungeon = newMap;
-            if (newEntityMap) {
-                dungeon.entityMap = newEntityMap;
-            }
-            
-            // Find a valid starting position
-            let validStartFound = false;
-            for (let y = 0; y < dungeon.map.length && !validStartFound; y++) 
-			{
-                for (let x = 0; x < dungeon.map[y].length && !validStartFound; x++) 
-				{
-                    switch (dungeon.map[y][x]) 
-					{
-						case dungeon.code.floor:
-						case dungeon.code.startingFloor:
-                        state.position.x = x;
-                        state.position.y = y;
-                        camera.position.x = x;
-                        camera.position.z = y;
-                        validStartFound = true;
-						break;
-                    }
-                }
-            }
-            
-            BuildMap();
-            updatePlayerInfo();
-        }
-
+        
 		//---------------------------------------------
 		// Actions
 		//---------------------------------------------
 	
-		function movePlayer(relativeDirection) 
+		function ActionMovePlayer(relativeDirection) 
 		{
 		    if (state.moving || state.turning) return;
 			let dir = directions[(state.facing + 4 + relativeDirection) % 4];
@@ -348,46 +195,26 @@
                 // Update player info display immediately
                 state.position.x = newX;
                 state.position.y = newY;
-                updatePlayerInfo();
+                RefreshUserInterface();
             }
 		}
 		
-        function turnPlayer(direction) {
+        function ActionTurnPlayer(direction) {
             if (state.moving || state.turning) return;
        
             state.facing = (state.facing + 4 + direction) % 4;
-            updateCameraRotation();
-            updatePlayerInfo();
+            UpdateCameraRotation();
+            RefreshUserInterface();
         }
 		
 		 // Switch theme
-        function switchTheme(themeName) {
-            if (themes[themeName]) {
-                currentTheme = themes[themeName];
-                scene.fog.color.set(currentTheme.fogColor);
-                renderer.setClearColor(currentTheme.fogColor);
-                scene.children.forEach(child => {
-                    if (child.isMesh) {
-                        if (child.position.y < 0) {
-                            // Floor
-                            child.material.color.set(currentTheme.floorColor);
-                        } else if (child.position.y > 1) {
-                            // Ceiling
-                            child.material.color.set(currentTheme.ceilingColor);
-                        } else {
-                            // Wall or entity
-                            const userData = child.userData;
-                            if (userData && userData.type === 'entity' && userData.id) {
-                                child.material.color.set(currentTheme.entityColors[userData.id] || 0xffffff);
-                                child.material.emissive.set(currentTheme.entityColors[userData.id] || 0xffffff);
-                            } else {
-                                child.material.color.set(currentTheme.wallColor);
-                            }
-                        }
-                    } else if (child.isLight && child.type === 'AmbientLight') {
-                        child.color.set(currentTheme.ambientLight);
-                    }
-                });
+        function ActionSwitchTheme(themeName) {
+            if (areas[themeName]) {
+                currentArea = areas[themeName];
+                dungeon.GenerateLayout(currentArea);
+				state.position = dungeon.GetStartingPosition();			
+				camera.position.x = state.position.x;
+				camera.position.z = state.position.y;
             }
         }
 		
@@ -396,13 +223,13 @@
 		//---------------------------------------------
 		
         // Update camera rotation based on facing direction
-        function updateCameraRotation() {
+        function UpdateCameraRotation() {
             state.targetRotation = state.facing * (Math.PI / 2);
             state.turning = true;
         }
 
         // Update player info display
-        function updatePlayerInfo() {
+        function RefreshUserInterface() {
             posXElement.textContent = state.position.x;
             posYElement.textContent = state.position.y;
             facingElement.textContent = directionNames[state.facing];
@@ -423,7 +250,7 @@
             
             raycaster.setFromCamera(mouse, camera);
             
-            const intersects = raycaster.intersectObjects(entities);
+            const intersects = raycaster.intersectObjects(dungeon.entities);
             
             if (intersects.length > 0) {
                 const object = intersects[0].object;
@@ -434,8 +261,8 @@
         }
 
         // Animation loop
-        function animate() {
-            requestAnimationFrame(animate);
+        function AnimateFrame() {
+            requestAnimationFrame(AnimateFrame);
             
             const delta = clock.getDelta();
 			
@@ -491,8 +318,8 @@
 			
 			if (state.moving || state.turning) 
 			{
-				entities.forEach(sprite => {
-				sprite.lookAt(camera.position);
+				dungeon.entities.forEach(sprite => {
+					sprite.lookAt(camera.position);
 				});
 			}
             
@@ -505,12 +332,12 @@
 		//---------------------------------------
 
         // Set up event listeners for controls
-        document.getElementById('moveForward').addEventListener('click', ()=> { movePlayer(0);});
-        document.getElementById('moveBackward').addEventListener('click', ()=> { movePlayer(-2);});
-        document.getElementById('turnLeft').addEventListener('click', ()=> {turnPlayer(1);});
-        document.getElementById('turnRight').addEventListener('click', ()=> {turnPlayer(-1);});
-        document.getElementById('strafeLeft').addEventListener('click', ()=> { movePlayer(1);});
-        document.getElementById('strafeRight').addEventListener('click', ()=> { movePlayer(-1);});
+        document.getElementById('moveForward').addEventListener('click', ()=> { ActionMovePlayer(0);});
+        document.getElementById('moveBackward').addEventListener('click', ()=> { ActionMovePlayer(-2);});
+        document.getElementById('turnLeft').addEventListener('click', ()=> {ActionTurnPlayer(1);});
+        document.getElementById('turnRight').addEventListener('click', ()=> {ActionTurnPlayer(-1);});
+        document.getElementById('strafeLeft').addEventListener('click', ()=> { ActionMovePlayer(1);});
+        document.getElementById('strafeRight').addEventListener('click', ()=> { ActionMovePlayer(-1);});
         document.addEventListener('keydown', SetupInputs);
 		
 		function SetupInputs(e) 
@@ -523,18 +350,18 @@
             switch(e.key) 
 			{
                 case 'ArrowUp': 
-                case 'w': movePlayer(0); break;
+                case 'w': ActionMovePlayer(0); break;
                 case 'ArrowDown': 
-                case 's': movePlayer(-2); break;
-				case 'q': movePlayer(1); break;
-                case 'e': movePlayer(-1); break;
+                case 's': ActionMovePlayer(-2); break;
+				case 'q': ActionMovePlayer(1); break;
+                case 'e': ActionMovePlayer(-1); break;
                 case 'ArrowLeft': 
-                case 'a': turnPlayer(1); break;
+                case 'a': ActionTurnPlayer(1); break;
                 case 'ArrowRight': 
-                case 'd': turnPlayer(-1); break;
-                case '1': switchTheme('dungeon'); break;
-                case '2': switchTheme('cave'); break;
-                case '3': switchTheme('forest'); break;
+                case 'd': ActionTurnPlayer(-1); break;
+                case '1': ActionSwitchTheme('dungeon'); break;
+                case '2': ActionSwitchTheme('cave'); break;
+                case '3': ActionSwitchTheme('forest'); break;
             }
         };
 		

@@ -2,24 +2,25 @@ function Dungeon()
 {
 	const F=0, SF = 1,  HW = 2,  QW=3, W = 4, R = 5, RW = 6; 
 	this.code = {floor:F, startingFloor: SF, halfWall:HW, quarterWall:QW, wall:W, roof:R, roofWall:RW};
+	this.walls = [];
+	this.floors = [];
+	this.ceilings = [];
+	this.entities = [];
 	this.map = [];
 	this.entityMap = [];
-	this.entityTypes = [
-		{ name: "Treasure", spawnMarkerPercent: 15, texture: soldierTexture, color: 0xffffff, interact: () => alert("You found treasure!") },
-		{ name: "Key", spawnMarkerPercent: 22, texture: soldierTexture, color: 0x3333ff, interact: () => alert("You found a key!") },
-		{ name: "Enemy", spawnMarkerPercent: 95, texture: merchantTexture, color: 0xff3322, interact: () => alert("Enemy attacks!") },
-	];
+	this.entityTypes = [];
+	this.areaSettings;
 	
-				
-	this.GenerateMap = function( width=35, height=35, minWidth=3, minHeight=3) {
+	this.GenerateLayout = function( areaSettings, width=35, height=35, minWidth=3, minHeight=3) {
+		this.areaSettings = areaSettings;
+		this.entityTypes = areaSettings.entities;
 		this.map = Array(height).fill().map(() => Array(width).fill(W));
 		this.entityMap = Array(height).fill().map(() => Array(width).fill(-1));
 		
-        // Random room dimensions (minimum 3x3, leaving 1 wall border)
-        const mapWidth = Math.floor(Math.random() * (width - minWidth-1)) + minWidth;
+        const mapWidth = Math.floor(Math.random() * (width - minWidth-1)) + minWidth; // Random room dimensions (minimum 3x3, leaving 1 wall border)
+        
         const mapHeight = Math.floor(Math.random() * (height - minHeight -1)) + minHeight;
         
-        // Random position (ensuring it fits within walls)
         const startX = Math.floor(Math.random() * (width - mapWidth - 2)) + 1;
         const startY = Math.floor(Math.random() * (height - mapHeight - 2)) + 1;
         
@@ -31,10 +32,8 @@ function Dungeon()
 		const centerX = Math.floor(startX + mapWidth/2);
         const centerY = Math.floor(startY + mapHeight/2);
 		
-        // Carve out the room
         for (let y = startY; y < startY + mapHeight; y++) {
             for (let x = startX; x < startX + mapWidth; x++) {
-                // Create floor
                 this.map[y][x] = F;
                 
 				if (x > startX && x < startX + mapWidth - 1 && 
@@ -43,37 +42,33 @@ function Dungeon()
 					if (Math.random() < 0.1) this.map[y][x] = HW;
 					else if (Math.random() < 0.15) this.map[y][x] = HW;
 					else if (Math.random() < 0.16) this.map[y][x] = R;
-                }
-				
-				switch (this.map[y][x]) 
-				{
-					case R:
-					case F:
-						if (entityIndex < this.entityTypes.length) 
-						{
-							const currentEntity = this.entityTypes[entityIndex];
-							if ( coveragePercent >= currentEntity.spawnMarkerPercent ) 
+					
+					switch (this.map[y][x]) 
+					{
+						case R:
+						case F:
+							if (entityIndex < areaSettings.entities.length) 
 							{
-								this.entityMap[y][x] = entityIndex;
+								const currentEntity = areaSettings.entities[entityIndex];
+								if ( coveragePercent >= currentEntity.areaPercentPosition ) 
+								{
+									this.entityMap[y][x] = entityIndex;
+									entityIndex ++;
+								}
 								
-								console.log(entityIndex, y, x);
-								entityIndex ++;
 							}
-						}
-						break;
-				}
+							break;
+					}
+                }
 				
 				currentRoomIndex++;
 				coveragePercent = currentRoomIndex*100/maxRooms ;
-
             }
         };
 		
         this.map[centerY][centerX] = SF;
-        
-        // Ensure walkable path by flood filling
         this.EnsureWalkablePath(centerX, centerY);
-		// this.LoadEntityMap(width, height, minWidth, minHeight);
+		this.Render();
 	
     };
 		
@@ -137,21 +132,164 @@ function Dungeon()
 		return {x:0, y:0};
 	};
 	
-	this.LoadEntityMap = function( width, height, mapWidth, mapHeight) 
+	this.Clear = function () {
+		this.walls.forEach(wall => scene.remove(wall));
+		this.entities.forEach(entity => scene.remove(entity));
+		this.ceilings.forEach(ceiling=>scene.remove(ceiling));
+		this.floors.forEach(floor=>scene.remove(floor));
+		this.walls = [];
+		this.entities = [];
+		this.ceilings = [];
+		this.floors = [];
+	};
+	
+	this.Render = function () 
 	{
-		for (let key in this.entityTypes) {
-			const x = Math.floor(Math.random() * (width - mapWidth - 2)) + 1;
-			const y = Math.floor(Math.random() * (height - mapHeight - 2)) + 1;
-			let attempt = 0;
-			while (this.IsValidPosition(x, y) && attempt < 1000) {
-				this.entityMap[y][x] = key;
-				attempt ++;
+		this.Clear();
+		// Materials
+		const textureLoader = new THREE.TextureLoader();
+		const wallMaterial = new THREE.MeshStandardMaterial({
+			map: new THREE.TextureLoader().load(this.areaSettings.wallTexture),
+			roughness: 0.8
+		});
+		const floorMaterial = new THREE.MeshStandardMaterial({
+			map: new THREE.TextureLoader().load(this.areaSettings.groundTexture),
+			roughness: 0.8
+		});
+		const ceilingMaterial = new THREE.MeshStandardMaterial({
+			map: new THREE.TextureLoader().load(this.areaSettings.wallTexture),
+			roughness: 0.3
+		});
+		
+		const skyBackground = new THREE.TextureLoader().load(this.areaSettings.skyTexture);
+		skyBackground.mapping = THREE.EquirectangularReflectionMapping;
+		scene.background = skyBackground;
+		
+		
+
+		// Create floor and ceiling
+		const floorGeometry = new THREE.PlaneGeometry(1, 1);
+		const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
+		
+		
+		// Create Walls
+		const wallGeometry = new THREE.BoxGeometry(1, 1, 1);
+		const halfWallGeometry = new THREE.BoxGeometry(1, 0.333, 1);
+		const ceilingGeometry = new THREE.BoxGeometry(1, 0.05, 1);
+		
+		for (let y = 0; y < this.map.length; y++) 
+		{
+			for (let x = 0; x < this.map[y].length; x++) 
+			{
+				this.SpawnFloor(x,y, floorMaterial, floorGeometry);
+				//SpawnCeiling(x,y,ceilingMaterial, ceilingGeometry);
+				this.SpawnWall(x,y, wallMaterial, wallGeometry);
+				this.SpawnHalfWall(x,y, wallMaterial, halfWallGeometry);
+				this.SpawnEntity(x,y);
+			}
+		}
+		
+		// Ambience and Lighting
+		scene.fog.color.set(this.areaSettings.fogColor);
+		renderer.setClearColor(this.areaSettings.fogColor);
+		scene.children.forEach(child => {
+			if (child.isMesh) {
+				if (child.position.y < 0) {
+					// Floor
+					child.material.color.set(this.areaSettings.floorColor);
+				} else if (child.position.y > 1) {
+					// Ceiling
+					child.material.color.set(this.areaSettings.ceilingColor);
+				} else {
+					// Wall or entity
+					const userData = child.userData;
+					if (userData && userData.type === 'entity' && userData.id) {
+						child.material.color.set(this.areaSettings.entityColors[userData.id] || 0xffffff);
+						child.material.emissive.set(this.areaSettings.entityColors[userData.id] || 0xffffff);
+					} else {
+						child.material.color.set(this.areaSettings.wallColor);
+					}
+				}
+			} else if (child.isLight && child.type === 'AmbientLight') {
+				child.color.set(this.areaSettings.ambientLight);
+			}
+		});
+	};
+	
+	this.SpawnFloor = function (x,y,material, geometry) 
+	{
+		const floor = new THREE.Mesh(geometry, material);
+		floor.rotation.x = -Math.PI / 2;
+		floor.position.set(x, -0.01, y);
+		scene.add(floor);
+		this.floors.push(floor);
+	};
+		
+	this.SpawnWall = function (x,y, material, geometry) 
+	{
+		if (this.map[y][x] === this.code.wall) {
+			const wall = new THREE.Mesh(geometry, material);
+			wall.position.set(x, 0.5, y);
+			scene.add(wall);
+			this.walls.push(wall);
+		}
+	};
+		
+	this.SpawnHalfWall = function (x,y, material, geometry) 
+	{
+		if (this.map[y][x] === this.code.halfWall) {
+			const wall = new THREE.Mesh(geometry, material);
+			wall.position.set(x, 0.167, y);
+			scene.add(wall);
+			this.walls.push(wall);
+		}
+	};
+		
+	this.SpawnCeiling =	function (x,y,material, geometry) 
+	{
+		if (this.map[y][x] === this.code.roof || this.map[y][x] === this.code.roofWall) {
+			const ceiling = new THREE.Mesh(geometry, material);
+			ceiling.position.set(x, 1, y);
+			scene.add(ceiling);
+			this.ceilings.push(ceiling);
+		}
+	};
+		
+		
+	this.SpawnEntity = function (x,y) 
+	{
+		if ( this.entityMap?.[y]?.[x]  >= 0) 
+		{        
+			const entityId = this.entityMap[y][x];
+			const entityType = this.entityTypes[entityId];
+			
+			if (entityType) 
+			{
+				const map = new THREE.TextureLoader().load(entityType.texture);
+				map.transparent = true;
+				
+				const entityMaterial = new THREE.SpriteMaterial({
+					map: map,
+					transparent: true,
+					alphaTest: 0.5, // Reduces transparency artifacts
+					color: entityType.color || 0xffffff
+				});
+				
+				// Create sprite
+				const entity = new THREE.Sprite(entityMaterial);
+				entity.position.set(x, 0.43, y);
+				entity.scale.set(1, 1, 1); // Width, height
+				
+				entity.userData = { 
+					type: 'entity', 
+					id: entityId,
+					interact: entityType.interact
+				};
+				scene.add(entity);
+				this.entities.push(entity);
 			}
 		}
 	};
-	
-	this.GenerateMap();
-//	this.LoadEntityMap();
 	
 	return this;
 }
