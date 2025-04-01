@@ -12,6 +12,7 @@
 	<script type="text/javascript" charset="UTF-8" src="texture/soldier.js"></script>
 	<script type="text/javascript" charset="UTF-8" src="objects/dungeon.js"></script>
     <script type="text/javascript" charset="UTF-8" src="objects/speech-text.js"></script>
+    <script type="text/javascript" charset="UTF-8" src="objects/minimap.js"></script>
    <style>
        
     </style>
@@ -19,9 +20,13 @@
 <body>
     <div id="gameContainer">
         <div id="loading">Loading...</div>
-        <div id="playerInfo">
-            Position: <span id="posX">0</span>, <span id="posY">0</span><br>
-            Facing: <span id="facing">North</span>
+        
+		<div id="miniMapContainer">
+			<canvas id="miniMap"></canvas>
+			<div id="playerArrow"></div>
+		</div>
+		<div id="mapInfoContainer">
+            <span id="dungeonLabel"></span> ( <span id="posX">0</span>, <span id="posY">0</span> )
         </div>
 		<div id="profilePic">
 			<img src="images/ruth.jpeg" alt="Profile">
@@ -103,7 +108,8 @@
 
         // Current theme
         let currentArea = areas.cave;
-
+		const miniMap = new MiniMap();
+		
         // Direction vectors based on facing
         const directions = [
             { x: 0, z: -1 }, // North
@@ -125,7 +131,7 @@
 		// DOM elements
         const posXElement = document.getElementById('posX');
         const posYElement = document.getElementById('posY');
-        const facingElement = document.getElementById('facing');
+        const dungeonLabelElement = document.getElementById('dungeonLabel');
         const loadingElement = document.getElementById('loading');
 
 		//-----------------------------------------
@@ -175,6 +181,8 @@
             //renderer.domElement.addEventListener('click', onMouseClick);
             loadingElement.style.display = 'none';
             AnimateFrame();
+			RefreshUserInterface();
+
         }
 
         
@@ -199,7 +207,8 @@
             }
 		}
 		
-        function ActionTurnPlayer(direction) {
+        function ActionTurnPlayer(direction) 
+		{
             if (state.moving || state.turning) return;
        
             state.facing = (state.facing + 4 + direction) % 4;
@@ -207,14 +216,15 @@
             RefreshUserInterface();
         }
 		
-		 // Switch theme
-        function ActionSwitchTheme(themeName) {
+        function ActionChangeArea(themeName) 
+		{
             if (areas[themeName]) {
                 currentArea = areas[themeName];
                 dungeon.GenerateLayout(currentArea);
 				state.position = dungeon.GetStartingPosition();			
 				camera.position.x = state.position.x;
 				camera.position.z = state.position.y;
+				RefreshUserInterface();
             }
         }
 		
@@ -223,20 +233,24 @@
 		//---------------------------------------------
 		
         // Update camera rotation based on facing direction
-        function UpdateCameraRotation() {
+        function UpdateCameraRotation() 
+		{
             state.targetRotation = state.facing * (Math.PI / 2);
             state.turning = true;
         }
 
         // Update player info display
-        function RefreshUserInterface() {
+        function RefreshUserInterface() 
+		{
             posXElement.textContent = state.position.x;
             posYElement.textContent = state.position.y;
-            facingElement.textContent = directionNames[state.facing];
+			dungeonLabelElement.textContent = currentArea.name;
+			miniMap.RenderDungeon(dungeon);
         }
 
         // Handle window resize
-        function onWindowResize() {
+        function onWindowResize() 
+		{
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -359,9 +373,9 @@
                 case 'a': ActionTurnPlayer(1); break;
                 case 'ArrowRight': 
                 case 'd': ActionTurnPlayer(-1); break;
-                case '1': ActionSwitchTheme('dungeon'); break;
-                case '2': ActionSwitchTheme('cave'); break;
-                case '3': ActionSwitchTheme('forest'); break;
+                case '1': ActionChangeArea('dungeon'); break;
+                case '2': ActionChangeArea('cave'); break;
+                case '3': ActionChangeArea('forest'); break;
             }
         };
 		
